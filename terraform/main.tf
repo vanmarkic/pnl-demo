@@ -22,6 +22,11 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.5"
     }
+    # AWS provider for S3 and Athena
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.30"
+    }
   }
 
   # Remote state storage in Azure Blob Storage
@@ -52,6 +57,20 @@ provider "azuread" {}
 
 # Random provider for unique names
 provider "random" {}
+
+# AWS Provider for S3 and Athena
+# Learning: Multi-cloud setup - Azure for compute, AWS for specific data services
+provider "aws" {
+  region = var.aws_region
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "Terraform"
+    }
+  }
+}
 
 # ===================
 # Data Sources
@@ -225,4 +244,67 @@ resource "azurerm_log_analytics_workspace" "main" {
   retention_in_days   = var.environment == "prod" ? 90 : 30
 
   tags = local.common_tags
+}
+
+# ===================
+# AWS S3 Bucket for Market Data
+# ===================
+# Learning: S3 used for storing large datasets queried by Athena
+
+resource "aws_s3_bucket" "market_data" {
+  bucket = var.s3_bucket_name
+
+  tags = {
+    Purpose = "Market data storage for PnL calculations"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "market_data" {
+  bucket = aws_s3_bucket.market_data.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "market_data" {
+  bucket = aws_s3_bucket.market_data.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "market_data" {
+  bucket = aws_s3_bucket.market_data.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# ===================
+# AWS Athena Module
+# ===================
+# Learning: Serverless SQL queries on S3 data without ETL
+
+module "athena" {
+  source = "./modules/athena"
+
+  project_name   = var.project_name
+  environment    = var.environment
+  aws_region     = var.aws_region
+  s3_bucket_name = aws_s3_bucket.market_data.bucket
+  database_name  = var.athena_database_name
+
+  # Cost control: limit data scanned per query
+  bytes_scanned_limit = var.athena_bytes_scanned_limit
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
 }

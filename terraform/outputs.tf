@@ -121,6 +121,44 @@ output "log_analytics_workspace_id" {
 }
 
 # ===================
+# AWS S3
+# ===================
+
+output "s3_bucket_name" {
+  description = "Name of the S3 bucket for market data"
+  value       = aws_s3_bucket.market_data.bucket
+}
+
+output "s3_bucket_arn" {
+  description = "ARN of the S3 bucket"
+  value       = aws_s3_bucket.market_data.arn
+}
+
+# ===================
+# AWS Athena
+# ===================
+
+output "athena_database_name" {
+  description = "Name of the Athena/Glue catalog database"
+  value       = module.athena.database_name
+}
+
+output "athena_workgroup_name" {
+  description = "Name of the Athena workgroup"
+  value       = module.athena.workgroup_name
+}
+
+output "athena_results_bucket" {
+  description = "S3 bucket for Athena query results"
+  value       = module.athena.results_bucket_name
+}
+
+output "athena_app_policy_arn" {
+  description = "IAM policy ARN for application Athena access"
+  value       = module.athena.app_policy_arn
+}
+
+# ===================
 # Summary
 # ===================
 
@@ -151,11 +189,17 @@ output "deployment_summary" {
 
     Key Vault: ${azurerm_key_vault.main.name}
 
+    AWS Services:
+      S3 Bucket: ${aws_s3_bucket.market_data.bucket}
+      Athena Database: ${module.athena.database_name}
+      Athena Workgroup: ${module.athena.workgroup_name}
+
     Next Steps:
     1. Get AKS credentials
     2. Push Docker images to ACR
     3. Deploy Kubernetes manifests
     4. Configure DNS/Ingress
+    5. Configure AWS credentials for S3/Athena access
 
     ============================================
   EOT

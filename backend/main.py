@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from models.base import engine, Base
-from routers import contracts_router, trades_router, pnl_router, risk_router
+from routers import contracts_router, trades_router, pnl_router, risk_router, athena_router
 from routers.data import router as data_router
 from config import get_settings
 
@@ -110,6 +110,7 @@ app.include_router(trades_router)
 app.include_router(pnl_router)
 app.include_router(risk_router)
 app.include_router(data_router)
+app.include_router(athena_router)
 
 
 @app.get("/")
@@ -126,6 +127,7 @@ async def root():
             "pnl": "/api/pnl",
             "risk": "/api/risk",
             "data": "/api/data",
+            "athena": "/api/athena",
         }
     }
 

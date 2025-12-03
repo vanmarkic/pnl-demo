@@ -170,3 +170,24 @@ variable "s3_bucket_name" {
   type        = string
   default     = "pnl-demo-market-data"
 }
+
+# ===================
+# AWS Athena
+# ===================
+
+variable "athena_database_name" {
+  description = "Name of the Athena/Glue catalog database"
+  type        = string
+  default     = "pnl_demo_db"
+}
+
+variable "athena_bytes_scanned_limit" {
+  description = "Maximum bytes scanned per Athena query (cost control)"
+  type        = number
+  default     = 10737418240  # 10 GB
+
+  validation {
+    condition     = var.athena_bytes_scanned_limit >= 1073741824  # At least 1 GB
+    error_message = "Bytes scanned limit must be at least 1 GB."
+  }
+}
