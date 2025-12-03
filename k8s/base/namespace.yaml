@@ -1,0 +1,13 @@
+# Namespace - Logical isolation for our application
+#
+# Learning points:
+# - Namespaces provide resource isolation
+# - They allow resource quotas and network policies per namespace
+# - Best practice: one namespace per application/environment
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pnl-demo
+  labels:
+    app: pnl-demo
+    environment: development

@@ -1,0 +1,79 @@
+# Production Environment Overlay
+#
+# Learning points:
+# - Production configs have more replicas, stricter resource limits
+# - Use specific image tags (not 'latest')
+# - Enable security features
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+namespace: pnl-demo
+
+commonLabels:
+  environment: production
+
+# Production patches
+patches:
+  # Increase replicas for production
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        replicas: 3
+    target:
+      kind: Deployment
+      name: backend
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        replicas: 3
+    target:
+      kind: Deployment
+      name: frontend
+  # Increase resource limits for production
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: backend
+                resources:
+                  requests:
+                    memory: "512Mi"
+                    cpu: "500m"
+                  limits:
+                    memory: "1Gi"
+                    cpu: "1000m"
+    target:
+      kind: Deployment
+      name: backend
+
+# Production ConfigMap
+configMapGenerator:
+  - name: pnl-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=WARNING
+      - ENVIRONMENT=production
+
+# Use specific image versions in production (not 'latest')
+images:
+  - name: pnl-backend
+    newTag: v1.0.0
+  - name: pnl-frontend
+    newTag: v1.0.0
+
+# Production-specific resources
+# Could add PodDisruptionBudget, resource quotas, etc.

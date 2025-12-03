@@ -1,0 +1,58 @@
+# Development Environment Overlay
+#
+# Learning points:
+# - Overlays customize base resources for specific environments
+# - Can patch, add, or modify resources
+# - Apply with: kubectl apply -k k8s/overlays/dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Reference the base configuration
+resources:
+  - ../../base
+
+# Override namespace
+namespace: pnl-demo
+
+# Add environment-specific labels
+commonLabels:
+  environment: development
+
+# Patches to modify base resources
+patches:
+  # Reduce replicas for dev
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        replicas: 1
+    target:
+      kind: Deployment
+      name: backend
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        replicas: 1
+    target:
+      kind: Deployment
+      name: frontend
+
+# Override ConfigMap values
+configMapGenerator:
+  - name: pnl-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=DEBUG
+      - ENVIRONMENT=development
+
+# Image tags for development
+images:
+  - name: pnl-backend
+    newTag: latest
+  - name: pnl-frontend
+    newTag: latest

@@ -1,0 +1,29 @@
+# ConfigMap - Non-sensitive configuration data
+#
+# Learning points:
+# - ConfigMaps store configuration as key-value pairs
+# - They can be mounted as files or environment variables
+# - Changes require pod restart (unless using dynamic reloading)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pnl-config
+  namespace: pnl-demo
+data:
+  # Database configuration
+  DATABASE_HOST: "postgres"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "pnl_demo"
+
+  # Application settings
+  LOG_LEVEL: "INFO"
+  ENVIRONMENT: "development"
+
+  # API settings
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  CORS_ORIGINS: "http://localhost:3000,http://pnl-demo.local"
+
+  # AWS settings (non-sensitive)
+  AWS_REGION: "eu-west-1"
+  S3_BUCKET_NAME: "pnl-demo-market-data"

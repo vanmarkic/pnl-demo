@@ -1,0 +1,37 @@
+# Kustomize Base Configuration
+#
+# Learning points:
+# - Kustomize is built into kubectl (kubectl apply -k)
+# - Allows customization without modifying base files
+# - Supports overlays for different environments
+# - Alternative to Helm for simpler use cases
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: pnl-demo-base
+
+# Namespace for all resources
+namespace: pnl-demo
+
+# Resources to include
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - postgres-deployment.yaml
+  - postgres-service.yaml
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
+  - ingress.yaml
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/name: pnl-demo
+  app.kubernetes.io/managed-by: kustomize
+
+# Common annotations
+commonAnnotations:
+  app.kubernetes.io/version: "1.0.0"

@@ -6,19 +6,28 @@ This FastAPI application demonstrates:
 - Trade execution and tracking
 - P&L (Profit & Loss) calculation
 - Risk metrics (VaR, Delta)
+- AWS S3 integration for data storage
 
 Learning points:
 - FastAPI application structure
 - Router organization
 - Middleware configuration
 - Database initialization
+- Configuration management
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import logging
 
 from models.base import engine, Base
 from routers import contracts_router, trades_router, pnl_router, risk_router
+from routers.data import router as data_router
+from config import get_settings
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -27,14 +36,28 @@ async def lifespan(app: FastAPI):
     Lifespan context manager - runs on startup and shutdown.
 
     Creates database tables on startup.
+    In production, use Alembic migrations instead.
     """
-    # Startup: Create database tables
-    Base.metadata.create_all(bind=engine)
-    print("Database tables created successfully")
-    yield
-    # Shutdown: cleanup if needed
-    print("Application shutting down")
+    settings = get_settings()
 
+    # Startup
+    logger.info(f"Starting application in {settings.environment} mode")
+
+    # Create database tables (use migrations in production)
+    if settings.environment == "development":
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+    else:
+        logger.info("Skipping auto table creation (use Alembic migrations)")
+
+    yield
+
+    # Shutdown
+    logger.info("Application shutting down")
+
+
+# Get settings
+settings = get_settings()
 
 # Create FastAPI application
 app = FastAPI(
@@ -49,12 +72,17 @@ app = FastAPI(
     * **Trade Execution** - Record buy/sell trades for gas and electricity
     * **P&L Tracking** - Calculate daily profit and loss
     * **Risk Metrics** - VaR, position delta, and stress testing
+    * **Data Storage** - AWS S3 integration for market data
 
     ### Technologies
     * FastAPI for REST API
-    * SQLAlchemy ORM for database
+    * SQLAlchemy ORM with PostgreSQL
+    * Alembic for database migrations
     * Pandas/NumPy for calculations
     * Pydantic for validation
+    * AWS S3 for data storage
+    * Docker & Kubernetes for deployment
+    * Terraform for infrastructure
 
     ### Domain Concepts
     * **Contract**: Agreement to buy/sell energy at specified terms
@@ -70,11 +98,7 @@ app = FastAPI(
 # Configure CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:3000",  # Alternative React port
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -85,6 +109,7 @@ app.include_router(contracts_router)
 app.include_router(trades_router)
 app.include_router(pnl_router)
 app.include_router(risk_router)
+app.include_router(data_router)
 
 
 @app.get("/")
@@ -92,12 +117,15 @@ async def root():
     """Root endpoint with API information"""
     return {
         "message": "Welcome to PnL Demo API",
+        "version": "1.0.0",
+        "environment": settings.environment,
         "docs": "/docs",
         "endpoints": {
             "contracts": "/api/contracts",
             "trades": "/api/trades",
             "pnl": "/api/pnl",
             "risk": "/api/risk",
+            "data": "/api/data",
         }
     }
 
@@ -105,10 +133,13 @@ async def root():
 @app.get("/health")
 async def health():
     """Health check endpoint for monitoring"""
-    return {"status": "healthy", "service": "pnl-demo-api"}
+    return {
+        "status": "healthy",
+        "service": "pnl-demo-api",
+        "environment": settings.environment
+    }
 
 
-# Optional: Seed data endpoint for development
 @app.post("/api/seed")
 async def seed_database():
     """
@@ -125,3 +156,19 @@ async def seed_database():
         return {"message": "Database seeded successfully", "data": result}
     finally:
         db.close()
+
+
+@app.get("/api/config")
+async def get_config():
+    """
+    Get non-sensitive configuration info.
+
+    Useful for debugging deployment issues.
+    """
+    return {
+        "environment": settings.environment,
+        "database_type": "postgresql" if "postgresql" in settings.database_url else "sqlite",
+        "aws_region": settings.aws_region,
+        "s3_bucket": settings.s3_bucket_name,
+        "cors_origins": settings.cors_origins_list,
+    }

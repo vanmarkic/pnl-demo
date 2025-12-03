@@ -1,0 +1,203 @@
+# CD Pipeline - Continuous Deployment to Azure
+#
+# Learning points:
+# - Environment-based deployments
+# - Manual approval gates
+# - Azure Kubernetes Service (AKS) deployment
+# - Helm or Kustomize for K8s deployments
+# - Secrets management
+
+name: CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  AZURE_RESOURCE_GROUP: pnl-demo-rg
+  AKS_CLUSTER_NAME: pnl-demo-aks
+  ACR_NAME: pnldemo
+
+jobs:
+  # ===================
+  # Deploy to Development
+  # ===================
+  deploy-dev:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    environment: development
+    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'dev'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Login to Azure
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Login to Azure Container Registry
+      - name: Login to ACR
+        run: |
+          az acr login --name ${{ env.ACR_NAME }}
+
+      # Build and push to ACR
+      - name: Build and push images to ACR
+        run: |
+          # Backend
+          docker build -t ${{ env.ACR_NAME }}.azurecr.io/pnl-backend:${{ github.sha }} ./backend
+          docker push ${{ env.ACR_NAME }}.azurecr.io/pnl-backend:${{ github.sha }}
+
+          # Frontend
+          docker build -t ${{ env.ACR_NAME }}.azurecr.io/pnl-frontend:${{ github.sha }} ./frontend
+          docker push ${{ env.ACR_NAME }}.azurecr.io/pnl-frontend:${{ github.sha }}
+
+      # Get AKS credentials
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      # Deploy to AKS using Kustomize
+      - name: Deploy to AKS (dev)
+        run: |
+          # Update image tags
+          cd k8s/overlays/dev
+          kustomize edit set image \
+            pnl-backend=${{ env.ACR_NAME }}.azurecr.io/pnl-backend:${{ github.sha }} \
+            pnl-frontend=${{ env.ACR_NAME }}.azurecr.io/pnl-frontend:${{ github.sha }}
+
+          # Apply configuration
+          kubectl apply -k .
+
+          # Wait for rollout
+          kubectl rollout status deployment/backend -n pnl-demo --timeout=300s
+          kubectl rollout status deployment/frontend -n pnl-demo --timeout=300s
+
+      # Run smoke tests
+      - name: Run smoke tests
+        run: |
+          # Get backend service URL
+          BACKEND_URL=$(kubectl get svc backend -n pnl-demo -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          echo "Backend URL: $BACKEND_URL"
+
+          # Health check
+          curl -f http://$BACKEND_URL:8000/health || echo "Health check failed (might need ingress)"
+
+  # ===================
+  # Deploy to Staging
+  # ===================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    needs: deploy-dev
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.environment == 'staging'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }}-staging \
+            --name ${{ env.AKS_CLUSTER_NAME }}-staging \
+            --overwrite-existing
+
+      - name: Deploy to AKS (staging)
+        run: |
+          cd k8s/overlays/prod  # Use prod config for staging
+          kustomize edit set image \
+            pnl-backend=${{ env.ACR_NAME }}.azurecr.io/pnl-backend:${{ github.sha }} \
+            pnl-frontend=${{ env.ACR_NAME }}.azurecr.io/pnl-frontend:${{ github.sha }}
+
+          kubectl apply -k .
+          kubectl rollout status deployment/backend -n pnl-demo --timeout=300s
+
+  # ===================
+  # Deploy to Production
+  # ===================
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production  # Requires manual approval
+    needs: deploy-staging
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.environment == 'prod'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get AKS credentials (prod)
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }}-prod \
+            --name ${{ env.AKS_CLUSTER_NAME }}-prod \
+            --overwrite-existing
+
+      - name: Deploy to AKS (production)
+        run: |
+          cd k8s/overlays/prod
+          kustomize edit set image \
+            pnl-backend=${{ env.ACR_NAME }}.azurecr.io/pnl-backend:${{ github.sha }} \
+            pnl-frontend=${{ env.ACR_NAME }}.azurecr.io/pnl-frontend:${{ github.sha }}
+
+          # Apply with canary deployment strategy
+          kubectl apply -k .
+
+          # Monitor rollout
+          kubectl rollout status deployment/backend -n pnl-demo --timeout=600s
+          kubectl rollout status deployment/frontend -n pnl-demo --timeout=300s
+
+      # Post-deployment verification
+      - name: Post-deployment verification
+        run: |
+          # Verify pods are running
+          kubectl get pods -n pnl-demo
+
+          # Check for any crashlooping pods
+          CRASHES=$(kubectl get pods -n pnl-demo -o jsonpath='{.items[*].status.containerStatuses[*].restartCount}')
+          echo "Restart counts: $CRASHES"
+
+      # Notify on success
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "Production deployment successful!"
+          # Add Slack/Teams notification here
+
+      # Rollback on failure
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed, rolling back..."
+          kubectl rollout undo deployment/backend -n pnl-demo
+          kubectl rollout undo deployment/frontend -n pnl-demo

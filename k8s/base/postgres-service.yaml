@@ -1,0 +1,22 @@
+# PostgreSQL Service
+#
+# Learning points:
+# - ClusterIP service: internal-only access within the cluster
+# - Service provides stable DNS name: postgres.pnl-demo.svc.cluster.local
+# - Other pods connect via service name, not pod IP
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: pnl-demo
+  labels:
+    app: postgres
+spec:
+  type: ClusterIP  # Internal only - database should not be exposed externally
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres
+  selector:
+    app: postgres
